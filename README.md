@@ -1,16 +1,42 @@
-qc.rs -- QuickCheck for Rust
+###QuickCheck for Rust
 
 Use `quick_check` to check that a specified property holds
 for values of `trait Arbitrary + Shrink`.
 
-Example::
+Now this library adheres to rustpkg's package structure.
+Thus you can conveniently add this line to your program,
+```rust
+extern mod qc = "github.com/lilac/quick-check";
+```
+without needing to install this library manually.
 
-    extern mod qc;
+###Example
+Suppose the current Rust workspace is ~/workspace/rust/, create a dir for the demo program
 
-    fn main() {
-        qc::quick_check("sort", qc::config.verbose(true).trials(500),
-            |mut v: ~[u8]| { sort(&mut v); is_sorted(v) });
-    }
+    $mkdir -p src/qc-demo
+
+and then write the sample code as follows: $cat src/qc-demo/main.rs
+```rust
+extern mod qc = "github.com/lilac/quick-check";
+
+fn is_sorted<T: TotalOrd>(v: &[T]) -> bool {
+    v.windows(2).all(|w| { w[0].cmp(&w[1]).le(&Greater) })
+}
+
+fn main() {
+    qc::quick_check("sort", qc::config.verbose(true).trials(500),
+        |mut v: ~[u8]| { v.sort(); is_sorted(v) });
+}
+```
+Now we build this new pkg with a command:
+
+    $rustpkg build qc-demo
+
+then install the built pkg with:
+
+    $rustpkg install qc-demo
+
+finally the compiled binary qc-demo is in the bin subdir of the current workspace.
 
 Issues:
 
@@ -18,7 +44,7 @@ Issues:
 
 ---
 
-Copyright License for qc.rs is identical with the Rust project:
+Copyright License is identical with the Rust project:
 
     Licensed under the Apache License, Version 2.0
     <LICENSE-APACHE or
