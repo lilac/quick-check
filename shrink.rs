@@ -3,7 +3,6 @@
 use lazy::Lazy;
 use super::std;
 
-use std::cell::Cell;
 use std::hashmap::HashMap;
 
 /**
@@ -19,7 +18,8 @@ pub trait Shrink {
 impl Shrink for () {}
 impl Shrink for bool {}
 impl Shrink for char {}
-impl Shrink for float {}
+impl Shrink for f32 {}
+impl Shrink for f64 {}
 impl Shrink for i8 {}
 impl Shrink for int {}
 
@@ -72,56 +72,59 @@ impl<A: Send + Clone + Shrink, B: Send + Clone + Shrink> Shrink for (A, B) {
 }
 
 macro_rules! shrink_tuple(
-    ($($T:ident),+ -> $($S:expr),+) => (
+    ($P:pat : $($T:ident),+ -> $($S:expr),+) => (
     impl<$($T: Send + Clone + Shrink),+> Shrink for ($($T),+) {
         fn shrink(&self) -> Lazy<($($T),+)> {
-            do Lazy::create |L| {
+            Lazy::create( |L| {
                 match self {
                     &($(ref $T),+) => {
                         $(
-                            L.push_map_env($T.shrink(), self.clone(), |s, t| $S);
+                            L.push_map_env($T.shrink(), self.clone(), |s, t| {
+                                let $P = t.clone();
+                                $S
+                                });
                         )+
                     }
                 }
-            }
+            })
         }
     }
     )
 )
 
 shrink_tuple!(
-    A, B, C ->
-    (s,      t.n1(), t.n2()),
-    (t.n0(), s,      t.n2()),
-    (t.n0(), t.n1(), s))
+    (a, b, c) : A, B, C ->
+    (s, b, c),
+    (a, s, c),
+    (a, b, s))
 
 shrink_tuple!(
-    A, B, C, D ->
-    (s,      t.n1(), t.n2(), t.n3()),
-    (t.n0(), s,      t.n2(), t.n3()),
-    (t.n0(), t.n1(), s,      t.n3()),
-    (t.n0(), t.n1(), t.n2(), s))
+    (a, b, c, d) : A, B, C, D ->
+    (s, b, c, d),
+    (a, s, c, d),
+    (a, b, s, d),
+    (a, b, c, s))
 
 shrink_tuple!(
-    A, B, C, D, E ->
-    (s,      t.n1(), t.n2(), t.n3(), t.n4()),
-    (t.n0(), s,      t.n2(), t.n3(), t.n4()),
-    (t.n0(), t.n1(), s,      t.n3(), t.n4()),
-    (t.n0(), t.n1(), t.n2(), s,      t.n4()),
-    (t.n0(), t.n1(), t.n2(), t.n3(), s))
+    (a, b, c, d, e) : A, B, C, D, E ->
+    (s, b, c, d, e),
+    (a, s, c, d, e),
+    (a, b, s, d, e),
+    (a, b, c, s, e),
+    (a, b, c, d, s))
 
 shrink_tuple!(
-    A, B, C, D, E, F ->
-    (s,      t.n1(), t.n2(), t.n3(), t.n4(), t.n5()),
-    (t.n0(), s,      t.n2(), t.n3(), t.n4(), t.n5()),
-    (t.n0(), t.n1(), s,      t.n3(), t.n4(), t.n5()),
-    (t.n0(), t.n1(), t.n2(), s,      t.n4(), t.n5()),
-    (t.n0(), t.n1(), t.n2(), t.n3(), s,      t.n5()),
-    (t.n0(), t.n1(), t.n2(), t.n3(), t.n4(), s))
+    (a, b, c, d, e, f) : A, B, C, D, E, F ->
+    (s, b, c, d, e, f),
+    (a, s, c, d, e, f),
+    (a, b, s, d, e, f),
+    (a, b, c, s, e, f),
+    (a, b, c, d, s, f),
+    (a, b, c, d, e, s))
 
 impl<T: Send + Clone + Shrink> Shrink for Option<T> {
     fn shrink(&self) -> Lazy<Option<T>> {
-        do Lazy::create |L| {
+        Lazy::create( |L| {
             match *self {
                 None => {}
                 Some(ref x) => {
@@ -129,64 +132,45 @@ impl<T: Send + Clone + Shrink> Shrink for Option<T> {
                     L.push_map(x.shrink(), |y| Some(y));
                 }
             }
-        }
+        })
     }
 }
 
 impl<T: Send + Clone + Shrink, U: Send + Clone + Shrink> Shrink for Result<T, U> {
     fn shrink(&self) -> Lazy<Result<T, U>> {
-        do Lazy::create |L| {
+        Lazy::create( |L| {
             match *self {
                 Ok(ref x) => L.push_map(x.shrink(), |y| Ok(y)),
                 Err(ref x) => L.push_map(x.shrink(), |y| Err(y)),
             }
-        }
-    }
-}
-
-impl<T: Send + Clone + Shrink, U: Send + Clone + Shrink> Shrink for Either<T, U> {
-    fn shrink(&self) -> Lazy<Either<T, U>> {
-        do Lazy::create |L| {
-            match *self {
-                Left(ref x) => L.push_map(x.shrink(), |y| Left(y)),
-                Right(ref x) => L.push_map(x.shrink(), |y| Right(y)),
-            }
-        }
+        })
     }
 }
 
 impl<T: Send + Shrink> Shrink for ~T {
     fn shrink(&self) -> Lazy<~T> {
-        do Lazy::create |L| {
+        Lazy::create( |L| {
             L.push_map((**self).shrink(), |u| ~u);
-        }
+        })
     }
 }
 
 impl<T: 'static + Send + Shrink> Shrink for @T {
     fn shrink(&self) -> Lazy<@T> {
-        do Lazy::create |L| {
+        Lazy::create( |L| {
             L.push_map((**self).shrink(), |u| @u);
-        }
-    }
-}
-
-impl<T: 'static + Send + Shrink> Shrink for @mut T {
-    fn shrink(&self) -> Lazy<@mut T> {
-        do Lazy::create |L| {
-            L.push_map((**self).shrink(), |u| @mut u);
-        }
+        })
     }
 }
 
 impl Shrink for ~str {
     fn shrink(&self) -> Lazy<~str> {
-        do Lazy::create |L| {
+        Lazy::create( |L| {
             if self.len() > 0 {
-                let v = self.iter().collect::<~[char]>();
+                let v = self.chars().collect::<~[char]>();
                 L.push_map(v.shrink(), |v| std::str::from_chars(v));
             }
-        }
+        })
     }
 }
 
@@ -214,12 +198,11 @@ impl<T: Send + Clone + Shrink> Shrink for ~[T] {
                         L.push(v1);
                         /* shrink one at a time */
                         do L.push_thunk((index, v)) |L, (index, v)| {
-                            do L.push_map_env(v[index].shrink(), (index, v))
-                                    |selt, &(ref index, ref v)| {
+                            L.push_map_env(v[index].shrink(), (index, v), |selt, &(ref index, ref v)| {
                                 let mut v1 = v.clone();
                                 v1[*index] = selt;
                                 v1
-                            }
+                            });
                         }
                     }
                 }
@@ -230,26 +213,14 @@ impl<T: Send + Clone + Shrink> Shrink for ~[T] {
 }
 
 
-impl<T: Send + Clone + Shrink> Shrink for Cell<T> {
-    fn shrink(&self) -> Lazy<Cell<T>> {
-        do Lazy::create |L| {
-            if !self.is_empty() {
-                let v = self.with_ref(|x| x.clone());
-                L.push(Cell::new_empty());
-                L.push_map(v.shrink(), |y| Cell::new(y));
-            }
-        }
-    }
-}
-
 impl<K: Eq + Hash + Clone + Shrink + Send,
      V: Clone + Shrink + Send> Shrink for HashMap<K, V> {
     fn shrink(&self) -> Lazy<HashMap<K, V>> {
-        do Lazy::create |L| {
+        Lazy::create( |L| {
             if self.len() > 0 {
                 let v = self.clone().move_iter().collect::<~[(K, V)]>();
                 L.push_map(v.shrink(), |v| v.move_iter().collect());
             }
-        }
+        })
     }
 }

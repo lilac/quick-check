@@ -38,6 +38,8 @@ according to those terms.
 */
 
 #[crate_type="lib"];
+#[feature(macro_rules)];
+#[feature(managed_boxes)];
 
 #[cfg(test)]
 extern mod extra;
@@ -103,53 +105,53 @@ impl QConfig {
  
  NOTE: `A` must implement `Clone`.
  */
-pub fn quick_check<A: Clone + Shrink + Arbitrary>(name: &str, cfg: QConfig, prop: &fn(A) -> bool) {
+pub fn quick_check<A: Clone + Shrink + Arbitrary>(name: &str, cfg: QConfig, prop: |A| -> bool) {
     let mut i = 0;
     while i < cfg.trials {
         let value = arbitrary::<A>(cfg.size + if cfg.grow { i / 8 } else { 0 });
         let v_copy = value.clone();
         if !prop(value) {
             if cfg.verbose {
-                println(fmt!("qc %s: first falsification with value '%?'", name, &v_copy));
+                println!("qc {}: first falsification with value '{:?}'", name, &v_copy);
             }
             let shrink = quick_shrink(cfg, v_copy, prop);
-            fail!(fmt!("qc %s: falsified (%u trials) with value '%?'", name, 1+i, shrink));
+            fail!(format!("qc {}: falsified ({} trials) with value '{:?}'", name, 1+i, shrink));
         }
         i += 1;
     }
     if cfg.verbose {
-        println(fmt!("qc %s: passed'", name));
+        println!("qc {}: passed'", name);
     }
 }
 
-pub fn quick_shrink<A: Clone + Shrink>(cfg: QConfig, value: A, prop: &fn(A) -> bool) -> A {
+pub fn quick_shrink<A: Clone + Shrink>(cfg: QConfig, value: A, prop: |A| -> bool) -> A {
     for elt in value.shrink() {
         let elt_cpy = elt.clone();
         if !prop(elt) {
-            if cfg.verbose { println(fmt!("Shrunk to: %?", &elt_cpy)); }
+            if cfg.verbose { println!("Shrunk to: {:?}", &elt_cpy); }
             return quick_shrink(cfg, elt_cpy, prop);
         }
     }
     if cfg.verbose {
-        println(fmt!("Shrink finished: %?", &value));
+        println!("Shrink finished: {:?}", &value);
     }
     value
 }
 
-pub fn quick_check_occurs<A: Arbitrary>(cfg: QConfig, name: &str, prop: &fn(A) -> bool) {
+pub fn quick_check_occurs<A: Arbitrary>(cfg: QConfig, name: &str, prop: |A| -> bool) {
     let mut n = 0u;
     for i in range(0, cfg.trials) {
         n += 1;
         let value = arbitrary(cfg.size + if cfg.grow { i / 8 } else { 0 });
         if prop(value) {
             if cfg.verbose {
-                println(fmt!("qc %s: occured (%u trials)", name, n));
+                println!("qc {}: occured ({} trials)", name, n);
             }
             break;
         }
     }
     if n >= cfg.trials {
-        fail!(fmt!("qc %s: could not to reproduce", name));
+        fail!(format!("qc {}: could not to reproduce", name));
     }
 }
 
@@ -159,7 +161,7 @@ pub macro_rules! quick_check(
     );
     ($qc_config:expr, $qc_property:expr) => ({
         quick_check(
-            fmt!("%s\n%s:%u", stringify!($qc_property), file!(), line!()),
+            format!("{}\n{}:{}", stringify!($qc_property), file!(), line!()),
             $qc_config,
             $qc_property);
     })
@@ -171,15 +173,16 @@ pub macro_rules! quick_check_occurs(
     );
     ($qc_config:expr, $qc_property:expr) => ({
         quick_check_occurs($qc_config,
-            fmt!("%s:%u", file!(), line!()), $qc_property);
+            format!("{}:{}", file!(), line!()), $qc_property);
     })
 )
 
 impl Shrink for SmallN {
     fn shrink(&self) -> Lazy<SmallN> {
-        do Lazy::create |L| {
-            L.push_map((**self).shrink(), |x| SmallN(x));
-        }
+        Lazy::create( |L| {
+            let SmallN(val) = *self;
+            L.push_map(val.shrink(), |x| SmallN(x));
+        })
     }
 }
 
@@ -204,7 +207,7 @@ impl<T: Clone + Arbitrary> Arbitrary for UserTree<T> {
 /// Simply dispatch to re-use the shrink implementation on tuples
 impl<T: Send + Clone + Shrink> Shrink for UserTree<T> {
     fn shrink(&self) -> Lazy<UserTree<T>> {
-        do Lazy::create |L| {
+        Lazy::create( |L| {
             match self.clone() {
                 Nil => {}
                 Node(x, l, r) => {
@@ -212,7 +215,7 @@ impl<T: Send + Clone + Shrink> Shrink for UserTree<T> {
                     L.push_map((x, l, r).shrink(), |(a, b, c)| Node(a, b, c));
                 }
             }
-        }
+        })
     }
 }
 
@@ -256,23 +259,23 @@ fn test_qc_config() {
     quick_check!(config.trials(7), |_: ()| { n += 1; true} );
     assert_eq!(n, 7);
 
-    quick_check_occurs!(config.size(1000), |n: SmallN| *n > 1000);
+    quick_check_occurs!(config.size(1000), |SmallN(n): SmallN| n > 1000);
 }
 
 
 #[test]
 fn test_qc_smalln() {
-    quick_check_occurs!(|n: SmallN| *n == 0);
-    quick_check_occurs!(|n: SmallN| *n == 1);
-    quick_check_occurs!(|n: SmallN| *n > 10);
+    quick_check_occurs!(|SmallN(n): SmallN| n == 0);
+    quick_check_occurs!(|SmallN(n): SmallN| n == 1);
+    quick_check_occurs!(|SmallN(n): SmallN| n > 10);
 }
 #[bench]
 fn shrink_bench_tup_2(b: &mut extra::test::BenchHarness) {
     let t: (uint, uint) = (12345, 6789);
-    do b.iter {
+    b.iter(|| {
         let t = t.clone();
         quick_shrink(config, t, |_| true);
-    }
+    });
 }
 
 #[bench]
@@ -280,10 +283,10 @@ fn shrink_bench_minimal(b: &mut extra::test::BenchHarness) {
     let t: (uint, UserTree<uint>, ~[u8], (Option<uint>, ~str)) = (
         63748, Node(2, ~Node(3, ~Nil, ~Nil), ~Nil), bytes!("text twist").to_owned(),
             (Some(256), ~"1729"));
-    do b.iter {
+    b.iter(|| {
         let t = t.clone();
         quick_shrink(config, t, |_| false);
-    }
+    });
 }
 
 #[bench]
@@ -291,10 +294,10 @@ fn shrink_bench_noshrink(b: &mut extra::test::BenchHarness) {
     let t: (uint, UserTree<uint>, ~[u8], (Option<uint>, ~str)) = (
         63748, Node(2, ~Node(3, ~Nil, ~Nil), ~Nil), bytes!("text twist").to_owned(),
             (Some(256), ~"1729"));
-    do b.iter {
+    b.iter(|| {
         let t = t.clone();
         quick_shrink(config, t, |_| true);
-    }
+    });
 }
 
 #[test]
@@ -302,7 +305,7 @@ fn test_qc_shrink() {
     /* Test minimal shrinks with false props */
     let v = SmallN(100);
     let shrink = quick_shrink(config, v, |_| false);
-    assert_eq!(*shrink, 0);
+    assert_eq!(shrink.unwrap(), 0);
 
     let v = 20000000u;
     let shrink = quick_shrink(config, v, |x| x < 1200301);
@@ -318,11 +321,11 @@ fn test_qc_shrink() {
     assert_eq!(shrink, None);
 
     let s = ~[Some(~"hi"), None, Some(~"more"), None];
-    assert_eq!(quick_shrink(config, s, |v| !v.iter().any(|x| x.map_default(false, |s| s.contains_char('e')))),
+    assert_eq!(quick_shrink(config, s, |v| !v.iter().any(|x| x.clone().map_default(false, |s| s.contains_char('e')))),
         ~[Some(~"e")]);
 
     let s = ~"boots are made for walking";
-    assert_eq!(quick_shrink(config, s, |v| v.iter().count(|x| x == 'a') <= 1),
+    assert_eq!(quick_shrink(config, s, |v| v.chars().count(|x| x == 'a') <= 1),
         ~"aa");
 
     let s = ~[0, 1, 1, 2, 1, 0, 1, 0, 1];
@@ -335,7 +338,7 @@ fn test_qc_shrink() {
     assert_eq!(shrink, (~"e", ~"e"));
 
     let s = (SmallN(1), SmallN(10), SmallN(3));
-    let shrink = quick_shrink(config, s, |(a, b, c)| *a + *b + *c == 0);
+    let shrink = quick_shrink(config, s, |(a, b, c)| a.unwrap() + b.unwrap() + c.unwrap() == 0);
     assert_eq!(shrink, (SmallN(0), SmallN(0), SmallN(1)));
 
     /* test the biggest supported tuple */
@@ -346,20 +349,12 @@ fn test_qc_shrink() {
 
 #[test]
 fn test_qc_shrink_containers() {
-    let shrink: Either<~str, int> = quick_shrink(config, Left(~"xyz"), |_| false);
-    assert_eq!(shrink, Left(~""));
-    let shrink: Either<int, ~str> = quick_shrink(config, Right(~"xyz"), |_| false);
-    assert_eq!(shrink, Right(~""));
-
     let shrink: Result<~str, int> = quick_shrink(config, Ok(~"xyz"), |_| false);
     assert_eq!(shrink, Ok(~""));
 
     /* @T does not change */
     let shrink = quick_shrink(config, @1,  |_| false);
     assert_eq!(shrink, @1);
-
-    let shrink = quick_shrink(config, std::cell::Cell::new((@mut 1, ~[1,2,3])),  |x| x.is_empty());
-    assert_eq!(shrink, std::cell::Cell::new((@mut 1, ~[])));
 }
 
 #[test]
@@ -381,7 +376,7 @@ fn test_qc_shrink_fail() {
 
 
 #[deriving(Rand, Clone)]
-struct Test_Foo { x: float, u: int }
+struct Test_Foo { x: f32, u: int }
 
 #[test]
 fn test_qc_containers() {
@@ -395,17 +390,10 @@ fn test_qc_containers() {
 
     quick_check!(|s: ~str| s.is_ascii());
 
-    quick_check_occurs!(|s: Either<u8,u8>| match s { Left(*) => true, _ => false });
-    quick_check_occurs!(|s: Either<u8,u8>| match s { Right(*) => true, _ => false });
-    quick_check_occurs!(|s: Either<Option<int>,u8>| match s { Left(Some(*)) => true, _ => false });
+    quick_check_occurs!(|s: Result<u8,u8>| match s { Ok(..) => true, _ => false });
+    quick_check_occurs!(|s: Result<u8,u8>| match s { Err(..) => true, _ => false });
 
-    quick_check_occurs!(|s: Result<u8,u8>| match s { Ok(*) => true, _ => false });
-    quick_check_occurs!(|s: Result<u8,u8>| match s { Err(*) => true, _ => false });
-
-    quick_check_occurs!(|(a, b, c): (@bool, @mut bool, ~bool)| *a && *b && *c);
-
-    quick_check_occurs!(|m: std::cell::Cell<~str>| m.is_empty());
-    quick_check_occurs!(|m: std::cell::Cell<@mut int>| !m.is_empty());
+    quick_check_occurs!(|(a, b, c): (@bool, @bool, ~bool)| *a && *b && *c);
 }
 
 #[test]

@@ -14,6 +14,7 @@
 
 
  This library was first implemented using ~fn but I switched to extern fn.
+ Update: Now switched to proc.
 
  */
 
@@ -30,12 +31,13 @@ trait Eval<L> {
 /// A frozen computation that can be resolved in the context of an L value (a Lazy)
 struct Thunk<L, Up> {
     upvar: Up,
-    f: extern fn(&mut L, Up),
+    f: proc(&mut L, Up),
 }
 
 impl<L, Up> Eval<L> for Thunk<L, Up> {
     fn eval(~self, x: &mut L) {
-        (self.f)(x, self.upvar)
+        let Thunk{ upvar: v, f: f } = *self;
+        f(x, v)
     }
 }
 
@@ -48,7 +50,7 @@ impl<T> Lazy<T> {
         Lazy{head: v, thunks: ~[]}
     }
 
-    pub fn create(f: &fn(&mut Lazy<T>)) -> Lazy<T> {
+    pub fn create(f: |&mut Lazy<T>|) -> Lazy<T> {
         let mut L = Lazy::new();
         f(&mut L);
         L
@@ -74,18 +76,16 @@ impl<T> Lazy<T> {
     /// push a thunk to the end of the thunk list of lazy.
     /// ordered after all immediate push values.
     pub fn push_thunk<Up: Send>(&mut self, x: Up,
-                                f: &'static fn:'static(&mut Lazy<T>, Up)) {
-        let f_extern: extern fn(&mut Lazy<T>, Up) = func_unwrap(f);
-        let t = ~Thunk { upvar: x, f: f_extern };
+                                f: proc(&mut Lazy<T>, Up)) {
+        let t = ~Thunk { upvar: x, f: f };
         self.thunks.push(t as ~Eval<Lazy<T>>)
     }
 
     /// lazily map from the iterator `a` using function `f`, appending the results to self.
     /// Static function without environment.
     pub fn push_map<A, J: Send + Iterator<A>>(&mut self, it: J,
-                                              f: &'static fn:'static(A) -> T) {
-        let f_extern: extern fn(A) -> T = func_unwrap(f);
-        do self.push_thunk((f_extern, it)) |L, mut (f, it)| {
+                                              f: 'static |A|: Send -> T) {
+        do self.push_thunk((f, it)) |L, (f, mut it)| {
             match it.next() {
                 None => {}
                 Some(x) => {
@@ -99,9 +99,8 @@ impl<T> Lazy<T> {
     /// Static function with ref to supplied environment.
     pub fn push_map_env<A, J: Send + Iterator<A>, Env: Send>
         (&mut self, it: J, env: Env,
-         f: &'static fn:'static(A, &mut Env) -> T) {
-        let f_extern: extern fn(A, &mut Env) -> T = func_unwrap(f);
-        do self.push_thunk((f_extern, it, env)) |L, mut (f, it, env)| {
+         f: 'static |A, &mut Env|: Send -> T) {
+        do self.push_thunk((f, it, env)) |L, (f, mut it, mut env)| {
             match it.next() {
                 None => {}
                 Some(x) => {
@@ -117,19 +116,9 @@ impl<T> Iterator<T> for Lazy<T> {
     fn next(&mut self) -> Option<T> { self.next() }
 }
 
-fn func_unwrap<F, R>(f: F) -> R {
-    /* Workaround &'static fn() not being Send/Sendable */
-    /* this is "safe" for &'static fn to extern fn */
-    unsafe {
-        let (f, p): (R, *()) = ::std::cast::transmute(f);
-        assert!(p.is_null());
-        f
-    }
-}
-
 #[test]
 fn test_lazy_list() {
-    let mut L = do Lazy::create |L| {
+    let mut L = Lazy::create( |L| {
         L.push(3);
         do L.push_thunk(~[4, 5]) |L, mut v| {
             L.push(v.shift());
@@ -137,7 +126,7 @@ fn test_lazy_list() {
                 L.push(v.shift());
             }
         }
-    };
+    });
 
     assert_eq!(L.next(), Some(3));
     assert_eq!(L.next(), Some(4));

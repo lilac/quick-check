@@ -2,9 +2,10 @@
 
 
 use super::std;
-use super::std::rand::{Rand, RngUtil};
+use super::std::rand::{Rand, Rng, task_rng};
+use std::rand::distributions::exponential::Exp1;
 
-use std::cell::Cell;
+use std::cell::RefCell;
 use std::hashmap::{HashMap, HashSet};
 /* Arbitrary */
 
@@ -36,9 +37,17 @@ pub struct Random<T>(T);
 #[deriving(Eq, Clone)]
 pub struct SmallN(uint);
 
+impl SmallN {
+    pub fn unwrap(self) -> uint {
+        let SmallN(v) = self;
+        v
+    }
+}
+
 fn small_n(size: uint) -> uint {
-    let f: std::rand::distributions::Exp1 = std::rand::random();
-    let n = ((*f) * (size as f64)) as uint;
+    let f: std::rand::distributions::exponential::Exp1 = std::rand::random();
+    let Exp1(val) = f;
+    let n = (val * (size as f64)) as uint;
     n.min(&(16 * size))
 }
 
@@ -89,7 +98,8 @@ arb_rand!(i8)
 //arb_rand!(u8)
 arb_rand!(int)
 arb_rand!(uint)
-arb_rand!(float)
+arb_rand!(f32)
+arb_rand!(f64)
 arb_rand!(bool)
 arb_rand!(())
 
@@ -115,11 +125,6 @@ impl<T: Arbitrary> Arbitrary for ~T {
 impl<T: 'static + Arbitrary> Arbitrary for @T {
     #[inline]
     fn arbitrary(sz: uint) -> @T { @arbitrary(sz) }
-}
-
-impl<T: 'static + Arbitrary> Arbitrary for @mut T {
-    #[inline]
-    fn arbitrary(sz: uint) -> @mut T { @mut arbitrary(sz) }
 }
 
 impl Arbitrary for u8 {
@@ -167,31 +172,17 @@ impl<T: Arbitrary, U: Arbitrary> Arbitrary for Result<T, U> {
     }
 }
 
-impl<T: Arbitrary, U: Arbitrary> Arbitrary for Either<T, U> {
-    fn arbitrary(sz: uint) -> Either<T, U> {
-        if std::rand::random() {
-            Left(arbitrary(sz))
-        } else {
-            Right(arbitrary(sz))
-        }
-    }
-}
-
 impl Arbitrary for ~str {
     fn arbitrary(sz: uint) -> ~str {
-        let rng = &mut *std::rand::task_rng();
+        let mut rng = std::rand::task_rng();
         let n = small_n(sz);
-        rng.gen_str(n)
+        rng.gen_ascii_str(n)
     }
 }
 
-impl <T: Arbitrary> Arbitrary for Cell<T> {
-    fn arbitrary(sz: uint) -> Cell<T> {
-        if std::rand::random() {
-            Cell::new(arbitrary(sz))
-        } else {
-            Cell::new_empty()
-        }
+impl <T: Arbitrary> Arbitrary for RefCell<Option<T>> {
+    fn arbitrary(sz: uint) -> RefCell<Option<T>> {
+        RefCell::new(arbitrary(sz))
     }
 }
 
