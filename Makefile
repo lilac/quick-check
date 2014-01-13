@@ -1,8 +1,8 @@
 
-SRCS = qc.rs lazy.rs shrink.rs arbitrary.rs
+SRCS = lib.rs lazy.rs shrink.rs arbitrary.rs
 
 qc: $(SRCS)
-	rust build --test $<
+	rustc --test -o qc $<
 
 libqc: $(SRCS)
 	rustc $<
