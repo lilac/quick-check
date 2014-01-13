@@ -1,4 +1,6 @@
-###QuickCheck for Rust
+#QuickCheck for Rust
+
+[![Build Status](https://travis-ci.org/lilac/quick-check.png?branch=master)](https://travis-ci.org/lilac/quick-check)
 
 Use `quick_check` to check that a specified property holds
 for values of `trait Arbitrary + Shrink`.
@@ -10,12 +12,12 @@ extern mod qc = "github.com/lilac/quick-check";
 ```
 without needing to install this library manually.
 
-###Example
-Suppose the current Rust workspace is ~/workspace/rust/, create a dir for the demo program
+##Example
+Suppose the current Rust workspace is `~/workspace/rust/`, create a dir for the demo program
 
     $mkdir -p src/qc-demo
 
-and then write the sample code as follows: $cat src/qc-demo/main.rs
+and then write the sample code as follows: `$cat src/qc-demo/main.rs`
 ```rust
 extern mod qc = "github.com/lilac/quick-check";
 
@@ -38,11 +40,11 @@ then install the built pkg with:
 
 finally the compiled binary qc-demo is in the bin subdir of the current workspace.
 
-Issues:
+## Issues
 
 * Clean up Lazy and Shrink, implement Arbitrary and Shrink further
 
----
+## License
 
 Copyright License is identical with the Rust project:
 
