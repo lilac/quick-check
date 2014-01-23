@@ -58,14 +58,10 @@ impl<T> Lazy<T> {
 
     pub fn next(&mut self) -> Option<T> {
         while self.head.len() == 0 && self.thunks.len() > 0 {
-            let next = self.thunks.shift();
+            let next = self.thunks.shift().unwrap();
             next.eval(self);
         }
-        if self.head.len() > 0 {
-            Some(self.head.shift())
-        } else {
-            None
-        }
+        self.head.shift()
     }
 
     /// push a value to the end of the Lazy.
@@ -121,9 +117,9 @@ fn test_lazy_list() {
     let mut L = Lazy::create( |L| {
         L.push(3);
         do L.push_thunk(~[4, 5]) |L, mut v| {
-            L.push(v.shift());
+            L.push(v.shift().unwrap());
             do L.push_thunk(v) |L, mut v| {
-                L.push(v.shift());
+                L.push(v.shift().unwrap());
             }
         }
     });

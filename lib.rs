@@ -408,8 +408,8 @@ fn test_str() {
 
 #[test]
 fn test_random_stuff() {
-    quick_check!(|v: ~[int]| { (v.head_opt().is_some()) == (v.len() > 0) });
-    quick_check!(|v: ~[~str]| v.head_opt() == v.iter().next());
+    quick_check!(|v: ~[int]| { (v.head().is_some()) == (v.len() > 0) });
+    quick_check!(|v: ~[~str]| v.head() == v.iter().next());
 
     quick_check!(|v: ~[Option<i8>]| { v == v.iter().map(|&elt| elt).collect() });
 
