@@ -10,7 +10,7 @@ for values of `trait Arbitrary + Shrink`.
 
 Example::
 
-    extern mod qc;
+    extern crate qc;
 
     fn main() {
         qc::quick_check("sort", qc::config.verbose(true).trials(500),
@@ -37,12 +37,12 @@ according to those terms.
 
 */
 
-#[crate_type="lib"];
-#[feature(macro_rules)];
-#[feature(managed_boxes)];
+#![crate_type="lib"]
+#![feature(macro_rules)]
+#![feature(managed_boxes)]
 
 #[cfg(test)]
-extern mod extra;
+extern crate extra;
 
 pub use lazy::Lazy;
 pub use shrink::Shrink;

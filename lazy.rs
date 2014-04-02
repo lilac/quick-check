@@ -20,8 +20,8 @@
 
 /// Lazily generated sequence, only traversable once
 pub struct Lazy<T> {
-    priv head: ~[T],
-    priv thunks: ~[~Eval<Lazy<T>>],
+    head: ~[T],
+    thunks: ~[~Eval<Lazy<T>>],
 }
 
 trait Eval<L> {
